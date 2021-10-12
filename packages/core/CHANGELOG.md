@@ -1,5 +1,50 @@
 # xstate
 
+## 4.26.0
+
+### Minor Changes
+
+- [#2676](https://github.com/statelyai/xstate/pull/2676) [`1ff4f7976`](https://github.com/statelyai/xstate/commit/1ff4f797653bdf58eb2c3a7e27aeae24cf4dd2b8) Thanks [@davidkpiano](https://github.com/davidkpiano)! - The `description` property is a new top-level property for state nodes and transitions, that lets you provide text descriptions:
+
+  ```ts
+  const machine = createMachine({
+    // ...
+    states: {
+      active: {
+        // ...
+        description: 'The task is in progress',
+        on: {
+          DEACTIVATE: {
+            // ...
+            description: 'Deactivates the task'
+          }
+        }
+      }
+    }
+  });
+  ```
+
+  Future Stately tooling will use the `description` to render automatically generated documentation, type hints, and enhancements to visual tools.
+
+### Patch Changes
+
+- [#2691](https://github.com/statelyai/xstate/pull/2691) [`a72806035`](https://github.com/statelyai/xstate/commit/a728060353c9cb9bdb0cd37aacf793498a8750c8) Thanks [@davidkpiano](https://github.com/davidkpiano)! - Meta data can now be specified for `invoke` configs in the `invoke.meta` property:
+
+  ```js
+  const machine = createMachine({
+    // ...
+    invoke: {
+      src: (ctx, e) => findUser(ctx.userId),
+      meta: {
+        summary: 'Finds user',
+        updatedAt: '2021-09-...',
+        version: '4.12.2'
+        // other descriptive meta properties
+      }
+    }
+  });
+  ```
+
 ## 4.25.0
 
 ### Minor Changes
