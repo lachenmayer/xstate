@@ -1,7 +1,7 @@
-import { StateNode } from './StateNode';
-import { State } from './State';
-import { Interpreter, Clock } from './interpreter';
+import { Clock, Interpreter } from './interpreter';
 import { Model } from './model.types';
+import { State } from './State';
+import { StateNode } from './StateNode';
 
 type AnyFunction = (...args: any[]) => any;
 type ReturnTypeOrValue<T> = T extends AnyFunction ? ReturnType<T> : T;
@@ -208,37 +208,50 @@ export type Condition<TContext, TEvent extends EventObject> =
 
 export type TransitionTarget<
   TContext,
+  TStateSchema extends StateSchema,
   TEvent extends EventObject
-> = SingleOrArray<string | StateNode<TContext, any, TEvent>>;
+> = SingleOrArray<string | StateNode<TContext, TStateSchema, TEvent>>;
 
 export type TransitionTargets<TContext> = Array<
   string | StateNode<TContext, any>
 >;
 
-export interface TransitionConfig<TContext, TEvent extends EventObject> {
+export interface TransitionConfig<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> {
   cond?: Condition<TContext, TEvent>;
   actions?: Actions<TContext, TEvent>;
   in?: StateValue;
   internal?: boolean;
-  target?: TransitionTarget<TContext, TEvent>;
+  target?: TransitionTarget<TContext, TStateSchema, TEvent>;
   meta?: Record<string, any>;
   description?: string;
 }
 
-export interface TargetTransitionConfig<TContext, TEvent extends EventObject>
-  extends TransitionConfig<TContext, TEvent> {
-  target: TransitionTarget<TContext, TEvent>; // TODO: just make this non-optional
+export interface TargetTransitionConfig<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> extends TransitionConfig<TContext, TStateSchema, TEvent> {
+  target: TransitionTarget<TContext, TStateSchema, TEvent>; // TODO: just make this non-optional
 }
 
 export type ConditionalTransitionConfig<
   TContext,
+  TStateSchema extends StateSchema,
   TEvent extends EventObject = EventObject
-> = Array<TransitionConfig<TContext, TEvent>>;
+> = Array<TransitionConfig<TContext, TStateSchema, TEvent>>;
 
-export type Transition<TContext, TEvent extends EventObject = EventObject> =
+export type Transition<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject = EventObject
+> =
   | string
-  | TransitionConfig<TContext, TEvent>
-  | ConditionalTransitionConfig<TContext, TEvent>;
+  | TransitionConfig<TContext, TStateSchema, TEvent>
+  | ConditionalTransitionConfig<TContext, TStateSchema, TEvent>;
 
 export type DisposeActivityFunction = () => void;
 
@@ -369,13 +382,17 @@ export interface Delay {
   delay: number;
 }
 
-export type DelayedTransitions<TContext, TEvent extends EventObject> =
+export type DelayedTransitions<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> =
   | Record<
       string | number,
-      string | SingleOrArray<TransitionConfig<TContext, TEvent>>
+      string | SingleOrArray<TransitionConfig<TContext, TStateSchema, TEvent>>
     >
   | Array<
-      TransitionConfig<TContext, TEvent> & {
+      TransitionConfig<TContext, TStateSchema, TEvent> & {
         delay: number | string | Expr<TContext, TEvent, number>;
       }
     >;
@@ -428,48 +445,73 @@ export type StatesDefinition<
   >;
 };
 
-export type TransitionConfigTarget<TContext, TEvent extends EventObject> =
-  | string
+export type TransitionConfigTarget<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> =
+  | keyof TStateSchema['states']
   | undefined
-  | StateNode<TContext, any, TEvent>;
+  | StateNode<TContext, TStateSchema, TEvent>;
 
 export type TransitionConfigOrTarget<
   TContext,
+  TStateSchema extends StateSchema,
   TEvent extends EventObject
 > = SingleOrArray<
-  TransitionConfigTarget<TContext, TEvent> | TransitionConfig<TContext, TEvent>
+  | TransitionConfigTarget<TContext, TStateSchema, TEvent>
+  | TransitionConfig<TContext, TStateSchema, TEvent>
 >;
 
-export type TransitionsConfigMap<TContext, TEvent extends EventObject> = {
+export type TransitionsConfigMap<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> = {
   [K in TEvent['type']]?: TransitionConfigOrTarget<
     TContext,
+    TStateSchema,
     TEvent extends { type: K } ? TEvent : never
   >;
 } & {
-  ''?: TransitionConfigOrTarget<TContext, TEvent>;
+  ''?: TransitionConfigOrTarget<TContext, TStateSchema, TEvent>;
 } & {
-  '*'?: TransitionConfigOrTarget<TContext, TEvent>;
+  '*'?: TransitionConfigOrTarget<TContext, TStateSchema, TEvent>;
 };
 
-type TransitionsConfigArray<TContext, TEvent extends EventObject> = Array<
+type TransitionsConfigArray<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> = Array<
   // distribute the union
   | (TEvent extends EventObject
-      ? TransitionConfig<TContext, TEvent> & { event: TEvent['type'] }
+      ? TransitionConfig<TContext, TStateSchema, TEvent> & {
+          event: TEvent['type'];
+        }
       : never)
-  | (TransitionConfig<TContext, TEvent> & { event: '' })
-  | (TransitionConfig<TContext, TEvent> & { event: '*' })
+  | (TransitionConfig<TContext, TStateSchema, TEvent> & { event: '' })
+  | (TransitionConfig<TContext, TStateSchema, TEvent> & { event: '*' })
 >;
 
-export type TransitionsConfig<TContext, TEvent extends EventObject> =
-  | TransitionsConfigMap<TContext, TEvent>
-  | TransitionsConfigArray<TContext, TEvent>;
+export type TransitionsConfig<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> =
+  | TransitionsConfigMap<TContext, TStateSchema, TEvent>
+  | TransitionsConfigArray<TContext, TStateSchema, TEvent>;
 
 export interface InvokeSourceDefinition {
   [key: string]: any;
   type: string;
 }
 
-export interface InvokeConfig<TContext, TEvent extends EventObject> {
+export interface InvokeConfig<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+> {
   /**
    * The unique identifier for the invoked machine. If not specified, this
    * will be the machine's own `id`, or the URL (from `src`).
@@ -507,13 +549,17 @@ export interface InvokeConfig<TContext, TEvent extends EventObject> {
    */
   onDone?:
     | string
-    | SingleOrArray<TransitionConfig<TContext, DoneInvokeEvent<any>>>;
+    | SingleOrArray<
+        TransitionConfig<TContext, TStateSchema, DoneInvokeEvent<any>>
+      >;
   /**
    * The transition to take upon the invoked child machine sending an error event.
    */
   onError?:
     | string
-    | SingleOrArray<TransitionConfig<TContext, DoneInvokeEvent<any>>>;
+    | SingleOrArray<
+        TransitionConfig<TContext, TStateSchema, DoneInvokeEvent<any>>
+      >;
   /**
    * Meta data related to this invocation
    */
@@ -563,12 +609,12 @@ export interface StateNodeConfig<
    * The services to invoke upon entering this state node. These services will be stopped upon exiting this state node.
    */
   invoke?: SingleOrArray<
-    InvokeConfig<TContext, TEvent> | StateMachine<any, any, any>
+    InvokeConfig<TContext, TStateSchema, TEvent> | StateMachine<any, any, any>
   >;
   /**
    * The mapping of event types to their potential transition(s).
    */
-  on?: TransitionsConfig<TContext, TEvent>;
+  on?: TransitionsConfig<TContext, TStateSchema, TEvent>;
   /**
    * The action(s) to be executed upon entering the state node.
    *
@@ -594,18 +640,20 @@ export interface StateNodeConfig<
    *
    * This is equivalent to defining a `[done(id)]` transition on this state node's `on` property.
    */
-  onDone?: string | SingleOrArray<TransitionConfig<TContext, DoneEventObject>>;
+  onDone?:
+    | string
+    | SingleOrArray<TransitionConfig<TContext, TStateSchema, DoneEventObject>>;
   /**
    * The mapping (or array) of delays (in milliseconds) to their potential transition(s).
    * The delayed transitions are taken after the specified delay in an interpreter.
    */
-  after?: DelayedTransitions<TContext, TEvent>;
+  after?: DelayedTransitions<TContext, TStateSchema, TEvent>;
 
   /**
    * An eventless transition that is always taken when this state node is active.
    * Equivalent to a transition specified as an empty `''`' string in the `on` property.
    */
-  always?: TransitionConfigOrTarget<TContext, TEvent>;
+  always?: TransitionConfigOrTarget<TContext, TStateSchema, TEvent>;
   /**
    * The activities to be started upon entering the state node,
    * and stopped upon exiting the state node.
@@ -673,8 +721,8 @@ export interface StateNodeDefinition<
   initial: StateNodeConfig<TContext, TStateSchema, TEvent>['initial'];
   history: boolean | 'shallow' | 'deep' | undefined;
   states: StatesDefinition<TContext, TStateSchema, TEvent>;
-  on: TransitionDefinitionMap<TContext, TEvent>;
-  transitions: Array<TransitionDefinition<TContext, TEvent>>;
+  on: TransitionDefinitionMap<TContext, TEvent, TStateSchema>;
+  transitions: Array<TransitionDefinition<TContext, TEvent, TStateSchema>>;
   entry: Array<ActionObject<TContext, TEvent>>;
   exit: Array<ActionObject<TContext, TEvent>>;
   /**
@@ -881,11 +929,15 @@ export interface ActivityMap {
 }
 
 // tslint:disable-next-line:class-name
-export interface StateTransition<TContext, TEvent extends EventObject> {
-  transitions: Array<TransitionDefinition<TContext, TEvent>>;
-  configuration: Array<StateNode<TContext, any, TEvent, any>>;
-  entrySet: Array<StateNode<TContext, any, TEvent, any>>;
-  exitSet: Array<StateNode<TContext, any, TEvent, any>>;
+export interface StateTransition<
+  TContext,
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> {
+  transitions: Array<TransitionDefinition<TContext, TEvent, TStateSchema>>;
+  configuration: Array<StateNode<TContext, TStateSchema, TEvent, any>>;
+  entrySet: Array<StateNode<TContext, TStateSchema, TEvent, any>>;
+  exitSet: Array<StateNode<TContext, TStateSchema, TEvent, any>>;
   /**
    * The source state that preceded the transition.
    */
@@ -1133,8 +1185,11 @@ export interface ChooseAction<TContext, TEvent extends EventObject>
   conds: Array<ChooseConditon<TContext, TEvent>>;
 }
 
-export interface TransitionDefinition<TContext, TEvent extends EventObject>
-  extends TransitionConfig<TContext, TEvent> {
+export interface TransitionDefinition<
+  TContext,
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> extends TransitionConfig<TContext, TStateSchema, TEvent> {
   target: Array<StateNode<TContext, any, TEvent>> | undefined;
   source: StateNode<TContext, any, TEvent>;
   actions: Array<ActionObject<TContext, TEvent>>;
@@ -1150,26 +1205,33 @@ export interface TransitionDefinition<TContext, TEvent extends EventObject>
   };
 }
 
-export type TransitionDefinitionMap<TContext, TEvent extends EventObject> = {
+export type TransitionDefinitionMap<
+  TContext,
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> = {
   [K in TEvent['type'] | NullEvent['type'] | '*']: Array<
     TransitionDefinition<
       TContext,
-      K extends TEvent['type'] ? Extract<TEvent, { type: K }> : EventObject
+      K extends TEvent['type'] ? Extract<TEvent, { type: K }> : EventObject,
+      TStateSchema
     >
   >;
 };
 
 export interface DelayedTransitionDefinition<
   TContext,
-  TEvent extends EventObject
-> extends TransitionDefinition<TContext, TEvent> {
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> extends TransitionDefinition<TContext, TEvent, TStateSchema> {
   delay: number | string | DelayExpr<TContext, TEvent>;
 }
 
 export interface Edge<
   TContext,
   TEvent extends EventObject,
-  TEventType extends TEvent['type'] = string
+  TEventType extends TEvent['type'] = string,
+  TStateSchema extends StateSchema = StateSchema
 > {
   event: TEventType;
   source: StateNode<TContext, any, TEvent>;
@@ -1177,11 +1239,15 @@ export interface Edge<
   cond?: Condition<TContext, TEvent & { type: TEventType }>;
   actions: Array<Action<TContext, TEvent>>;
   meta?: MetaObject;
-  transition: TransitionDefinition<TContext, TEvent>;
+  transition: TransitionDefinition<TContext, TEvent, TStateSchema>;
 }
-export interface NodesAndEdges<TContext, TEvent extends EventObject> {
+export interface NodesAndEdges<
+  TContext,
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> {
   nodes: StateNode[];
-  edges: Array<Edge<TContext, TEvent, TEvent['type']>>;
+  edges: Array<Edge<TContext, TEvent, TEvent['type'], TStateSchema>>;
 }
 
 export interface Segment<TContext, TEvent extends EventObject> {
@@ -1247,7 +1313,11 @@ export interface StateLike<TContext> {
   _event: SCXML.Event<EventObject>;
 }
 
-export interface StateConfig<TContext, TEvent extends EventObject> {
+export interface StateConfig<
+  TContext,
+  TEvent extends EventObject,
+  TStateSchema extends StateSchema = StateSchema
+> {
   value: StateValue;
   context: TContext;
   _event: SCXML.Event<TEvent>;
@@ -1262,11 +1332,11 @@ export interface StateConfig<TContext, TEvent extends EventObject> {
   meta?: any;
   events?: TEvent[];
   configuration: Array<StateNode<TContext, any, TEvent>>;
-  transitions: Array<TransitionDefinition<TContext, TEvent>>;
+  transitions: Array<TransitionDefinition<TContext, TEvent, TStateSchema>>;
   children: Record<string, ActorRef<any>>;
   done?: boolean;
   tags?: Set<string>;
-  machine?: StateMachine<TContext, any, TEvent, any>;
+  machine?: StateMachine<TContext, TStateSchema, TEvent, any>;
 }
 
 export interface StateSchema<TC = any> {

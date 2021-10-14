@@ -19,7 +19,7 @@ export function toInvokeSource(
 }
 
 export function toInvokeDefinition<TContext, TEvent extends EventObject>(
-  invokeConfig: InvokeConfig<TContext, TEvent> & {
+  invokeConfig: InvokeConfig<TContext, any, TEvent> & {
     src: string | InvokeSourceDefinition;
     id: string;
   }

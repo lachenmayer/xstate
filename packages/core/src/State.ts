@@ -1,26 +1,26 @@
-import {
-  StateValue,
-  ActivityMap,
-  EventObject,
-  HistoryValue,
-  ActionObject,
-  EventType,
-  StateValueMap,
-  StateConfig,
-  SCXML,
-  StateSchema,
-  TransitionDefinition,
-  Typestate,
-  ActorRef,
-  StateMachine,
-  SimpleEventsOf
-} from './types';
+import { initEvent } from './actions';
 import { EMPTY_ACTIVITY_MAP } from './constants';
-import { matchesState, keys, isString, warn } from './utils';
+import { IS_PRODUCTION } from './environment';
 import { StateNode } from './StateNode';
 import { getMeta, nextEvents } from './stateUtils';
-import { initEvent } from './actions';
-import { IS_PRODUCTION } from './environment';
+import {
+  ActionObject,
+  ActivityMap,
+  ActorRef,
+  EventObject,
+  EventType,
+  HistoryValue,
+  SCXML,
+  SimpleEventsOf,
+  StateConfig,
+  StateMachine,
+  StateSchema,
+  StateValue,
+  StateValueMap,
+  TransitionDefinition,
+  Typestate
+} from './types';
+import { isString, keys, matchesState, warn } from './utils';
 
 export function stateValuesEqual(
   a: StateValue | undefined,
@@ -125,7 +125,9 @@ export class State<
   /**
    * The transition definitions that resulted in this state.
    */
-  public transitions: Array<TransitionDefinition<TContext, TEvent>>;
+  public transitions: Array<
+    TransitionDefinition<TContext, TEvent, TStateSchema>
+  >;
   /**
    * An object mapping actor IDs to spawned actors/invoked services.
    */
@@ -185,9 +187,11 @@ export class State<
    * Creates a new State instance for the given `config`.
    * @param config The state config
    */
-  public static create<TC, TE extends EventObject = EventObject>(
-    config: StateConfig<TC, TE>
-  ): State<TC, TE> {
+  public static create<
+    TC,
+    TE extends EventObject = EventObject,
+    TStateSchema extends StateSchema = StateSchema
+  >(config: StateConfig<TC, TE, TStateSchema>): State<TC, TE> {
     return new State(config);
   }
   /**
@@ -234,7 +238,7 @@ export class State<
    * @param events Internal event queue. Should be empty with run-to-completion semantics.
    * @param configuration
    */
-  constructor(config: StateConfig<TContext, TEvent>) {
+  constructor(config: StateConfig<TContext, TEvent, TStateSchema>) {
     this.value = config.value;
     this.context = config.context;
     this._event = config._event;

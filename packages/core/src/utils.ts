@@ -24,7 +24,8 @@ import {
   GuardMeta,
   InvokeSourceDefinition,
   Observer,
-  Behavior
+  Behavior,
+  StateSchema
 } from './types';
 import {
   STATE_DELIMITER,
@@ -585,14 +586,18 @@ export function toSCXMLEvent<TEvent extends EventObject>(
   };
 }
 
-export function toTransitionConfigArray<TContext, TEvent extends EventObject>(
+export function toTransitionConfigArray<
+  TContext,
+  TStateSchema extends StateSchema,
+  TEvent extends EventObject
+>(
   event: TEvent['type'] | NullEvent['type'] | '*',
   configLike: SingleOrArray<
-    | TransitionConfig<TContext, TEvent>
-    | TransitionConfigTarget<TContext, TEvent>
+    | TransitionConfig<TContext, TStateSchema, TEvent>
+    | TransitionConfigTarget<TContext, TStateSchema, TEvent>
   >
 ): Array<
-  TransitionConfig<TContext, TEvent> & {
+  TransitionConfig<TContext, TStateSchema, TEvent> & {
     event: TEvent['type'] | NullEvent['type'] | '*';
   }
 > {
@@ -607,7 +612,7 @@ export function toTransitionConfigArray<TContext, TEvent extends EventObject>(
 
     return { ...transitionLike, event };
   }) as Array<
-    TransitionConfig<TContext, TEvent> & {
+    TransitionConfig<TContext, TStateSchema, TEvent> & {
       event: TEvent['type'] | NullEvent['type'] | '*';
     } // TODO: fix 'as' (remove)
   >;

@@ -1,105 +1,105 @@
 import {
-  getEventType,
-  toStatePath,
-  toStateValue,
-  mapValues,
-  path,
-  toStatePaths,
-  pathToStateValue,
-  flatten,
-  mapFilterValues,
-  nestedPath,
-  toArray,
-  keys,
-  isBuiltInEvent,
-  partition,
-  updateHistoryValue,
-  warn,
-  isArray,
-  isFunction,
-  isString,
-  toGuard,
-  isMachine,
-  toSCXMLEvent,
-  mapContext,
-  toTransitionConfigArray,
-  normalizeTarget,
-  evaluateGuard
-} from './utils';
-import {
-  Event,
-  StateValue,
-  TransitionConfig,
-  StateTransition,
-  StateValueMap,
-  MachineOptions,
-  EventObject,
-  HistoryStateNodeConfig,
-  HistoryValue,
-  StateNodeDefinition,
-  TransitionDefinition,
-  DelayedTransitionDefinition,
-  ActivityDefinition,
-  StateNodeConfig,
-  StateSchema,
-  StatesDefinition,
-  StateNodesConfig,
-  FinalStateNodeConfig,
-  InvokeDefinition,
-  ActionObject,
-  Mapper,
-  PropertyMapper,
-  NullEvent,
-  MachineConfig,
-  InvokeCreator,
-  DoneEventObject,
-  SingleOrArray,
-  SendActionObject,
-  SpecialTargets,
-  SCXML,
-  RaiseActionObject,
-  ActivityActionObject,
-  InvokeActionObject,
-  Typestate,
-  TransitionDefinitionMap,
-  DelayExpr,
-  InvokeSourceDefinition,
-  MachineSchema,
-  ActorRef,
-  StateMachine
-} from './types';
-import { matchesState } from './utils';
-import { State, stateValuesEqual } from './State';
-import * as actionTypes from './actionTypes';
-import {
-  start,
-  stop,
-  toActivityDefinition,
-  send,
-  cancel,
   after,
-  raise,
+  cancel,
   done,
   doneInvoke,
   error,
-  toActionObject,
   initEvent,
+  raise,
+  resolveActions,
+  send,
+  start,
+  stop,
+  toActionObject,
   toActionObjects,
-  resolveActions
+  toActivityDefinition
 } from './actions';
-import { IS_PRODUCTION } from './environment';
+import * as actionTypes from './actionTypes';
+import { createInvocableActor } from './Actor';
 import { STATE_DELIMITER } from './constants';
+import { IS_PRODUCTION } from './environment';
+import { toInvokeDefinition } from './invokeUtils';
+import { State, stateValuesEqual } from './State';
 import {
-  getValue,
-  getConfiguration,
-  has,
-  getChildren,
   getAllStateNodes,
+  getChildren,
+  getConfiguration,
+  getValue,
+  has,
   isInFinalState,
   isLeafNode
 } from './stateUtils';
-import { createInvocableActor } from './Actor';
-import { toInvokeDefinition } from './invokeUtils';
+import {
+  ActionObject,
+  ActivityActionObject,
+  ActivityDefinition,
+  ActorRef,
+  DelayedTransitionDefinition,
+  DelayExpr,
+  DoneEventObject,
+  Event,
+  EventObject,
+  FinalStateNodeConfig,
+  HistoryStateNodeConfig,
+  HistoryValue,
+  InvokeActionObject,
+  InvokeCreator,
+  InvokeDefinition,
+  InvokeSourceDefinition,
+  MachineConfig,
+  MachineOptions,
+  MachineSchema,
+  Mapper,
+  NullEvent,
+  PropertyMapper,
+  RaiseActionObject,
+  SCXML,
+  SendActionObject,
+  SingleOrArray,
+  SpecialTargets,
+  StateMachine,
+  StateNodeConfig,
+  StateNodeDefinition,
+  StateNodesConfig,
+  StateSchema,
+  StatesDefinition,
+  StateTransition,
+  StateValue,
+  StateValueMap,
+  TransitionConfig,
+  TransitionDefinition,
+  TransitionDefinitionMap,
+  Typestate
+} from './types';
+import {
+  evaluateGuard,
+  flatten,
+  getEventType,
+  isArray,
+  isBuiltInEvent,
+  isFunction,
+  isMachine,
+  isString,
+  keys,
+  mapContext,
+  mapFilterValues,
+  mapValues,
+  matchesState,
+  nestedPath,
+  normalizeTarget,
+  partition,
+  path,
+  pathToStateValue,
+  toArray,
+  toGuard,
+  toSCXMLEvent,
+  toStatePath,
+  toStatePaths,
+  toStateValue,
+  toTransitionConfigArray,
+  updateHistoryValue,
+  warn
+} from './utils';
 
 const NULL_EVENT = '';
 const STATE_IDENTIFIER = '#';
@@ -120,7 +120,7 @@ const validateArrayifiedTransitions = <TContext>(
   stateNode: StateNode<any, any, any, any>,
   event: string,
   transitions: Array<
-    TransitionConfig<TContext, EventObject> & {
+    TransitionConfig<TContext, any, EventObject> & {
       event: string;
     }
   >
@@ -259,9 +259,11 @@ class StateNode<
     relativeValue: new Map() as Map<StateNode<TContext>, StateValue>,
     initialStateValue: undefined as StateValue | undefined,
     initialState: undefined as State<TContext, TEvent> | undefined,
-    on: undefined as TransitionDefinitionMap<TContext, TEvent> | undefined,
+    on: undefined as
+      | TransitionDefinitionMap<TContext, TEvent, TStateSchema>
+      | undefined,
     transitions: undefined as
-      | Array<TransitionDefinition<TContext, TEvent>>
+      | Array<TransitionDefinition<TContext, TEvent, TStateSchema>>
       | undefined,
     candidates: {} as {
       [K in TEvent['type'] | NullEvent['type'] | '*']:
@@ -270,13 +272,14 @@ class StateNode<
               TContext,
               K extends TEvent['type']
                 ? Extract<TEvent, { type: K }>
-                : EventObject
+                : EventObject,
+              TStateSchema
             >
           >
         | undefined;
     },
     delayedTransitions: undefined as
-      | Array<DelayedTransitionDefinition<TContext, TEvent>>
+      | Array<DelayedTransitionDefinition<TContext, TEvent, TStateSchema>>
       | undefined
   };
 
@@ -534,7 +537,7 @@ class StateNode<
   /**
    * The mapping of events to transitions.
    */
-  public get on(): TransitionDefinitionMap<TContext, TEvent> {
+  public get on(): TransitionDefinitionMap<TContext, TEvent, TStateSchema> {
     if (this.__cache.on) {
       return this.__cache.on;
     }
@@ -545,10 +548,12 @@ class StateNode<
       map[transition.eventType] = map[transition.eventType] || [];
       map[transition.eventType].push(transition as any);
       return map;
-    }, {} as TransitionDefinitionMap<TContext, TEvent>));
+    }, {} as TransitionDefinitionMap<TContext, TEvent, TStateSchema>));
   }
 
-  public get after(): Array<DelayedTransitionDefinition<TContext, TEvent>> {
+  public get after(): Array<
+    DelayedTransitionDefinition<TContext, TEvent, TStateSchema>
+  > {
     return (
       this.__cache.delayedTransitions ||
       ((this.__cache.delayedTransitions = this.getDelayedTransitions()),
@@ -559,7 +564,9 @@ class StateNode<
   /**
    * All the transitions that can be taken from this state node.
    */
-  public get transitions(): Array<TransitionDefinition<TContext, TEvent>> {
+  public get transitions(): Array<
+    TransitionDefinition<TContext, TEvent, TStateSchema>
+  > {
     return (
       this.__cache.transitions ||
       ((this.__cache.transitions = this.formatTransitions()),
@@ -589,7 +596,7 @@ class StateNode<
    * All delayed transitions from the config.
    */
   private getDelayedTransitions(): Array<
-    DelayedTransitionDefinition<TContext, TEvent>
+    DelayedTransitionDefinition<TContext, TEvent, TStateSchema>
   > {
     const afterConfig = this.config.after;
 
@@ -724,7 +731,7 @@ class StateNode<
     stateValue: string,
     state: State<TContext, TEvent>,
     _event: SCXML.Event<TEvent>
-  ): StateTransition<TContext, TEvent> | undefined {
+  ): StateTransition<TContext, TEvent, TStateSchema> | undefined {
     const stateNode = this.getStateNode(stateValue);
     const next = stateNode.next(state, _event);
 
@@ -738,7 +745,7 @@ class StateNode<
     stateValue: StateValueMap,
     state: State<TContext, TEvent>,
     _event: SCXML.Event<TEvent>
-  ): StateTransition<TContext, TEvent> | undefined {
+  ): StateTransition<TContext, TEvent, TStateSchema> | undefined {
     const subStateKeys = keys(stateValue);
 
     const stateNode = this.getStateNode(subStateKeys[0]);
@@ -758,8 +765,11 @@ class StateNode<
     stateValue: StateValueMap,
     state: State<TContext, TEvent>,
     _event: SCXML.Event<TEvent>
-  ): StateTransition<TContext, TEvent> | undefined {
-    const transitionMap: Record<string, StateTransition<TContext, TEvent>> = {};
+  ): StateTransition<TContext, TEvent, TStateSchema> | undefined {
+    const transitionMap: Record<
+      string,
+      StateTransition<TContext, TEvent, TStateSchema>
+    > = {};
 
     for (const subStateKey of keys(stateValue)) {
       const subStateValue = stateValue[subStateKey];
@@ -812,7 +822,7 @@ class StateNode<
     stateValue: StateValue,
     state: State<TContext, TEvent, any, any>,
     _event: SCXML.Event<TEvent>
-  ): StateTransition<TContext, TEvent> | undefined {
+  ): StateTransition<TContext, TEvent, TStateSchema> | undefined {
     // leaf node
     if (isString(stateValue)) {
       return this.transitionLeafNode(stateValue, state, _event);
@@ -829,12 +839,14 @@ class StateNode<
   private next(
     state: State<TContext, TEvent>,
     _event: SCXML.Event<TEvent>
-  ): StateTransition<TContext, TEvent> | undefined {
+  ): StateTransition<TContext, TEvent, TStateSchema> | undefined {
     const eventName = _event.name;
     const actions: Array<ActionObject<TContext, TEvent>> = [];
 
-    let nextStateNodes: Array<StateNode<TContext, any, TEvent>> = [];
-    let selectedTransition: TransitionDefinition<TContext, TEvent> | undefined;
+    let nextStateNodes: Array<StateNode<TContext, TStateSchema, TEvent>> = [];
+    let selectedTransition:
+      | TransitionDefinition<TContext, TEvent, TStateSchema>
+      | undefined;
 
     for (const candidate of this.getCandidates(eventName)) {
       const { cond, in: stateIn } = candidate;
@@ -958,7 +970,7 @@ class StateNode<
   }
 
   private getActions(
-    transition: StateTransition<TContext, TEvent>,
+    transition: StateTransition<TContext, TEvent, TStateSchema>,
     currentContext: TContext,
     _event: SCXML.Event<TEvent>,
     prevState?: State<TContext>
@@ -1148,7 +1160,7 @@ class StateNode<
   }
 
   private resolveTransition(
-    stateTransition: StateTransition<TContext, TEvent>,
+    stateTransition: StateTransition<TContext, TEvent, TStateSchema>,
     currentState?: State<TContext, TEvent, any, any>,
     _event: SCXML.Event<TEvent> = initEvent as SCXML.Event<TEvent>,
     context: TContext = this.machine.context
@@ -1847,10 +1859,10 @@ class StateNode<
   }
 
   private formatTransition(
-    transitionConfig: TransitionConfig<TContext, TEvent> & {
+    transitionConfig: TransitionConfig<TContext, TStateSchema, TEvent> & {
       event: TEvent['type'] | NullEvent['type'] | '*';
     }
-  ): TransitionDefinition<TContext, TEvent> {
+  ): TransitionDefinition<TContext, TEvent, TStateSchema> {
     const normalizedTarget = normalizeTarget(transitionConfig.target);
     const internal =
       'internal' in transitionConfig
@@ -1883,9 +1895,11 @@ class StateNode<
 
     return transition;
   }
-  private formatTransitions(): Array<TransitionDefinition<TContext, TEvent>> {
+  private formatTransitions(): Array<
+    TransitionDefinition<TContext, TEvent, TStateSchema>
+  > {
     let onConfig: Array<
-      TransitionConfig<TContext, EventObject> & {
+      TransitionConfig<TContext, TStateSchema, EventObject> & {
         event: string;
       }
     >;
@@ -1912,6 +1926,7 @@ class StateNode<
             }
             const transitionConfigArray = toTransitionConfigArray<
               TContext,
+              TStateSchema,
               EventObject
             >(key, strictTransitionConfigs[key as string]);
             if (!IS_PRODUCTION) {
@@ -1923,7 +1938,7 @@ class StateNode<
             toTransitionConfigArray(
               WILDCARD,
               wildcardConfigs as SingleOrArray<
-                TransitionConfig<TContext, EventObject> & {
+                TransitionConfig<TContext, TStateSchema, EventObject> & {
                   event: '*';
                 }
               >
@@ -1975,7 +1990,7 @@ class StateNode<
     const formattedTransitions = flatten(
       [...doneConfig, ...invokeConfig, ...onConfig, ...eventlessConfig].map(
         (
-          transitionConfig: TransitionConfig<TContext, TEvent> & {
+          transitionConfig: TransitionConfig<TContext, TStateSchema, TEvent> & {
             event: TEvent['type'] | NullEvent['type'] | '*';
           }
         ) =>
